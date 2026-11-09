@@ -1,4 +1,4 @@
-# TrustVault Enterprise V2
+# TrustVault - A Secure document sharing Website with Audit Trails
 
 Confidential document sharing with server-enforced permissions, email-verified sign-up and
 password reset, and a tamper-resistant audit trail.
@@ -148,4 +148,4 @@ TrustVault_Production/
     └── .env.example · db.env.example
 ```
 
-Third-party assets: three.js (MIT), Vanta.js (MIT), Inter (SIL OFL 1.1).
+Third-party assets: GSAP, Vanta.js, Inter(SIL OFL 1.1).
