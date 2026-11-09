@@ -1,0 +1,9 @@
+**/.env
+**/db.env
+backend/data
+**/__pycache__
+**/*.pyc
+.git
+*.log
+start.ps1
+api_security_check.py

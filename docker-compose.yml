@@ -1,0 +1,56 @@
+# TrustVault Enterprise V2
+#   1. create backend/.env and backend/db.env from the .example files (start.ps1 does this for you)
+#   2. docker compose up -d --build
+# Both ports are bound to 127.0.0.1 only. Publish the API through a TLS reverse proxy
+# (nginx, Caddy, Traefik) in production; never expose MySQL.
+name: trustvault
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    env_file: backend/db.env        # MYSQL_* only; the API container never gets the root password
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+      - --max_allowed_packet=32M
+      - --local-infile=0
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./backend/mysql_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./backend/mysql_privileges.sql:/docker-entrypoint-initdb.d/02_privileges.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend/data:/app/data    # first-boot credentials file (and the dev-only OTP outbox)
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  db_data:
