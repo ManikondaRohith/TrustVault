@@ -1,62 +1,257 @@
-# PROMPTS.md
-## How AI was used on this project, and where it was wrong.
+# TrustVault – My Prompts
 
-> **Read this first.** These entries are a record of the first working session that produced the initial version (03–09 Nov 2026, with Claude Code, Cursor, Antigravity, Copilot). They describe things that really happened in that session. The week is not over: add your own dated entries as you keep working (what you asked, what came back, what was wrong, the commit that fixed it). Do not leave this as the only record. Before submitting, check each commit link below against your own repository's history.
+These are the prompts I used to build TrustVault, from **3 November to 9 November 2026**.
+I am writing them the way I actually typed them, so some are short and some have small mistakes.
+TrustVault is a website where owners share confidential documents and every touch is recorded.
 
----
-
-### Context file reused throughout
-The challenge brief, supplied as 12 screenshots of the Snovasys problem statement (requirements, the three "non-negotiables", the hand-in list). Everything below was steered by those.
-
----
-
-### 2026-11-03 - Entry 1: the stack the AI picked could not be installed
-* **Asked:** build TrustVault from the brief, "without skipping any requirement".
-* **Produced:** a plan on Express + multer + a SQLite npm package.
-* **Wrong:** none of it was installable: the sandbox's package registry is blocked (`ENOTFOUND`, then a proxy `403`). Retrying different commands would not have helped.
-* **Did instead:** rebuilt the design with zero npm dependencies: Node's built-in `http`, `node:sqlite`, `node:crypto` (and later transitioned to FastAPI with hash-pinned requirements for Python). A side effect I kept on purpose: nothing to supply-chain-attack, and a clean clone runs with no external package download issues.
-* **Commit:** `59c8640`
+**Stack I ended up with:** HTML/CSS/JS frontend, FastAPI backend, MySQL 8 database, Docker.
+**Roles:** Admin, Owner, Viewer.
 
 ---
 
-### 2026-11-04 - Entry 2 (authorisation): the "who can see this?" SQL did not match the function
-* **Asked:** write `authz.js` so one function decides access, plus a SQL fragment for list/search.
-* **Produced:** `readableWhere(user)` returning SQL that referenced `:now`, but returning only `{uid}` as parameters. The first draft also forgot that a disabled user must match nothing and still bind both parameters (SQLite rejects unused named parameters).
-* **Wrong, specifically:** every list/search call would have thrown, and, worse, the temptation was to "just fix the error" and move on without checking the SQL meant the same thing as `effectivePermission()`. Two independent definitions of "may read" is exactly where a leak hides.
-* **Did instead:** changed the signature to `readableWhere(cfg, user)`, bound both parameters in every branch, and wrote an exhaustive test (every user x every document) asserting the SQL and the function agree (`access.test.js`, "exhaustive agreement").
-* **Commit:** Fixed before the first commit, so it lands in `59c8640`.
+## Plan of the week
+
+| Day | Prompts | Division |
+|---|---|---|
+| 3 Nov | #1 – #3 | Planning + Database |
+| 4 Nov | #4 – #6 | Backend |
+| 5 Nov | #7 – #9 | Security + first Frontend |
+| 6 Nov | #10 – #12 | Frontend + Sharing |
+| 7 Nov | #13 – #14 | Design (colors, theme, mascot) |
+| 8 Nov | #15 – #18 | Safety, Audit, Forgot password |
+| 9 Nov | #19 – #22 | Upgrades + Testing + Docker |
 
 ---
 
-### 2026-11-05 - Entry 3 (audit trail): the tamper-detection pointer could lie after a rollback
-* **Asked:** an audit trail that "can't be quietly altered", including deletion of the latest rows.
-* **Produced:** hash chain + triggers + a separate "head" file written inside `record()`.
-* **Wrong, specifically:** `record()` runs inside the caller's database transaction. If the change later rolled back, the head file would already say "entry N" while the database only had N-1, so verification would report tampering that never happened. A noisy false alarm makes people ignore the real one.
-* **Did instead:** the head file is written only after the outermost transaction commits (`db.onCommit`). I confirmed it with the "failed change leaves no half-written state" and "truncating the tail is detected" tests. In MySQL V2, tamper resistance was elevated to trigger level (`BEFORE UPDATE`/`DELETE` raise `SIGNAL SQLSTATE '45000'`) with permissions enforced via `mysql_privileges.sql`.
-* **Commit:** Fixed before the first commit, so it lands in `59c8640`.
+# DIVISION 1: Planning and Database (3 Nov)
+
+### Prompt #1 – Idea
+> I want to make a website called TrustVault to share confidential documents. There should be 3 types of users: Admin, Owner and Viewer. Owner uploads and shares files. Viewer can only open what the owner gives. Admin can see details and the logs but must never read the file content. Tell me the plan and folder structure first, don't write code yet.
+
+**Result:** Folder plan with `frontend/` and `backend/`. Rules for the 3 roles were fixed here.
+
+### Prompt #2 – Database tables
+> Use MySQL 8. Make the tables: users, documents, document_blobs (file content in a separate table so the list is fast), document_grants (READ or EDIT for each viewer), reports, messages and audit_logs. Document ids should start from 1001 so they look like D-1001. Give me the full mysql_schema.sql.
+
+**Result:** `mysql_schema.sql` with all tables. Users have `role`, `is_blocked`, `must_reset`, `warnings` columns.
+
+### Prompt #3 – Sample data
+> Add 5 sample users: Manikonda_Rohith (Admin), Naveen and Gowtham (Owners), Krishna and Keerthi (Viewers). Also add 4 sample documents. Krishna should already have read access to Salary-Letter-Krishna. Don't hard code passwords, make random ones.
+
+**Result:** Seed code in `main.py`. Passwords are random and saved in `backend/data/initial_credentials.txt`.
 
 ---
 
-### 2026-11-07 - Entry 4 (tests): my own tests failed 7 times for a reason that was not the product
-* **Asked:** tests that prove expiry by moving a fake clock forward 31 days.
-* **Produced:** a suite that moved the clock, which also made every logged-in session idle out, so later tests got 401 and crashed with confusing undefined errors. It looked like seven real failures.
-* **Wrong:** the tests, not the server. I confirmed it by reproducing it in isolation (alice gets 401 after the clock jump and after restoring it) instead of loosening the assertions.
-* **Fix:** I found the cause; the suite was then changed (by the time I re-ran it) to use very long sessions for that file, with session timeouts covered by their own dedicated tests in `security.test.js` / `api_security_check.py`.
-* **Commit:** `4dc2a01`
+# DIVISION 2: Backend (4 Nov)
+
+### Prompt #4 – FastAPI setup
+> Now make the backend with FastAPI and SQLAlchemy. Files: main.py, config.py, database.py, models.py, schemas.py. Keep settings in a .env file. Unknown fields in requests must be rejected. Errors should be simple messages, no stack trace.
+
+**Result:** App starts, `/api/health` works, errors return plain `{"detail": "..."}`.
+
+### Prompt #5 – Login and sign-up
+> Make the auth routes: sign-up, login, logout, me, change password. New sign-ups are always Viewer. Sign-up needs email verification with a 6 digit code. Passwords must be 12+ characters with upper, lower, number and symbol.
+
+**Result:** `routes/auth_routes.py`. Sign-up has start, resend, verify steps.
+
+### Prompt #6 – Document routes
+> Make document routes: list, upload, create text page, open, download, edit, rename, delete. Also sharing routes where the owner gives READ or EDIT to a viewer and can take it back. Use one single function to decide who can do what, don't repeat checks everywhere.
+
+**Result:** `routes/doc_routes.py` and the `can()` function in `auth.py`.
 
 ---
 
-### 2026-11-09 - Entry 5 (verification): "all tests pass" was not enough
-* **Asked:** finish and verify the whole thing.
-* **Found:** one failing test (size limit): the server did return 413, but the early body-size check said "limit 1024 bytes" while the validator said "1 KB". Cosmetic, but it showed two code paths owning one message.
-* **Did instead:** one shared formatter (`4dc2a01`). Then I did not stop at unit tests: I drove the real UI in a headless browser across all three roles (upload, download, share, expiry on an external share, remove access, assistant, admin verify) and at phone width, and read the console for CSP violations (none). I also re-read all 12 brief screenshots against the build rather than trusting my earlier reading of them.
+# DIVISION 3: Security (5 Nov)
+
+### Prompt #7 – Passwords and sessions
+> Store passwords with Argon2id. Use JWT in an HttpOnly cookie, not in localStorage. Session should end after 15 minutes of no activity. When user signs out or changes password, all old tokens must stop working.
+
+**Result:** `security.py` with Argon2id and `token_version` to kill old sessions.
+
+### Prompt #8 – OTP and brute force
+> Make the OTP safe. Don't store the code, store only a hash. Expiry 5 minutes, one time use, max 5 tries. For login, 5 wrong tries should lock that username for 15 minutes. Add the same lock for document passcodes. Also add CSRF protection.
+
+**Result:** `services/otp_service.py`, `lockouts` table, and the `X-Requested-With: TrustVault` header check.
+
+### Prompt #9 – Upload safety
+> Only allow pdf, txt, doc, docx, jpg, png, webp, svg up to 10 MB. Check the real file type and not just the name. Block names like `photo.jpg.exe`. Block scripts inside svg.
+
+**Result:** `validate_upload()` in `security.py`.
 
 ---
 
-### Where the AI was not the problem, and how I checked it
-For the access-control paths I did not take "it passes" on trust. I attacked it as a second user: 404 vs missing-id comparison on every route, a forged edit grant on a viewer, version-number tricks, swapped ciphertext files, edited/deleted/truncated audit rows, and a forged chain without the secret. These are the tests in `access.test.js`, `security.test.js`, `api_security_check.py` (121 checks), and the audit suite.
+# DIVISION 4: Frontend (5 to 6 Nov)
+
+### Prompt #10 – Login page
+> Make the frontend with plain HTML, CSS and JS only, no frameworks. Login page on the left has a cute document mascot, right side has the form with Sign in and Create account tabs. The mascot should cover its eyes when I type the password and shake when login fails.
+
+**Result:** `index.html` and `styles.css` (login part). See the Login screenshot above.
+
+### Prompt #11 – Dashboard
+> After login show a dashboard. Top bar with name, role badge and Sign out. Left menu: Overview, Documents, Safety & Support, Access, Audit trail. Overview has 3 count boxes (documents you can see, refused attempts, audit entries) and a card for each role.
+
+**Result:** `app.js`. The menu changes for each role. Admin does not get the upload button.
+
+### Prompt #12 – Documents page and upload button
+> On Documents page show the files as cards with search, owner filter, category filter and a From date. Owner should have a round + button at the bottom right to upload a file or make a text page. Viewer can only Open, Download, and Message owner.
+
+**Result:** Documents grid, filters, and the floating `+` button.
 
 ---
 
-### What the AI-assistant inside the product is allowed to do
-**Nothing that changes access.** See `WRITEUP.md`, "Where AI fits".
+# DIVISION 5: Design (7 Nov)
+
+### Prompt #13 – Colors and dark mode
+> Make a light and dark theme with a toggle button at the top right. Use CSS variables for all colors. Blue accent, green for OK, red for errors. Dark background should be dark navy.
+
+**Result:** CSS variables in `styles.css` and the sun/moon toggle. First version looks like the picture in **Mistake #1** below.
+
+### Prompt #14 – Background and opening animation
+> Add a moving network background on the login page with Vanta.js. Download three.js and Vanta into the project, don't use CDN links. After login play a short book opening animation with a loading bar and then show the dashboard.
+
+**Result:** Vanta net in `assets/vendor/`, and the `.open` book animation.
+
+---
+
+# DIVISION 6: Safety and Audit (8 Nov)
+
+### Prompt #15 – Audit trail
+> Every open, download, edit, refused attempt and permission change must be written to an audit table. Nobody should be able to edit or delete it, even the app. Make each row linked to the previous one with a hash so tampering can be found. Add a Verify chain button.
+
+**Result:** `audit_logs` table with MySQL triggers, `audit_service.py`, `mysql_privileges.sql` (app can only SELECT and INSERT there).
+
+### Prompt #16 – Warnings and reports
+> Owners should be able to report a viewer who has access to their documents. Each report is 1 warning. When the viewer logs in they must see a big red Warning screen and press "I Understand & Agree". After the 4th warning block the account automatically.
+
+**Result:** `routes/safety_routes.py`, Warning overlay, and the WARNINGS badge. See Warning screenshot in Mistake #8.
+
+### Prompt #17 – Forgot password
+> Add Forgot Password on the login page. Steps: enter the registered phone number, send OTP, type the code, then set a new password.
+
+**Result:** First version used a **phone number**. Later I changed it (see Prompt #19 and Mistake #3).
+
+### Prompt #18 – Admin tools
+> Admin should be able to change roles, block, unblock and reset users. Add a button "Try to tamper" that tries to change the audit log and shows that it gets refused. Add "Run access self-tests" also.
+
+**Result:** `routes/admin_routes.py` and the Audit trail page buttons.
+
+---
+
+# DIVISION 7: Upgrades, Testing and Docker (9 Nov)
+
+### Prompt #19 – Remove phone, use email only
+> Remove the phone number and SMS everywhere. Use only email codes (Gmail SMTP with an app password). Remove the phone columns from the database and give me a migration file for old data. Forgot password should be: email, code, captcha, new password.
+
+**Result:** `migrations/001_email_only.sql`, the 4-step Forgot password box with a captcha.
+
+### Prompt #20 – Docker
+> Put everything in Docker Compose: MySQL 8.4 and the API. Ports only on 127.0.0.1. Run the API as a non-root user with read-only files. Make a start.ps1 for Windows that makes the secrets and the .env files for me.
+
+**Result:** `docker-compose.yml`, `backend/Dockerfile`, `start.ps1` with `-Dev`, `-Test`, `-Down`.
+
+### Prompt #21 – Lock the dependencies
+> Pin all pip packages with hashes. Make start.ps1 check the three.js, Vanta and font files with a checksum so nobody can swap them. Add strict CSP, no inline scripts or styles.
+
+**Result:** `requirements.txt` with hashes, `checksums.sha256`, CSP in `main.py`.
+
+### Prompt #22 – Security test
+> Write a test script that attacks my own website and checks 121 things: headers, CSRF, OTP reuse, role escalation, bad uploads, IDOR, grants, passcodes, blocked owner, audit tampering, lockout and session revoke. Use only Python standard library.
+
+**Result:** `api_security_check.py`, run with `.\start.ps1 -Dev -Test`.
+
+---
+
+# MISTAKES I FOUND (with pictures) AND THE PROMPTS I USED TO FIX THEM
+
+## Mistake #1 – Color palette is broken in light mode
+![Light mode login](screenshots/06_Light_Mode_Login.png)
+
+**What is wrong:** The left panel stays dark navy, but the right side is white with a pale blue background. It looks like two different websites stuck together. The heading is also "Welcome back" here, but in dark mode it is "WELCOME BACK".
+
+**My fix prompt:**
+> The login page colors don't match in light mode. Left panel is dark navy but the right side is white and light blue. Make both sides follow the same CSS variables so light mode is fully light and dark mode is fully dark. Also keep the heading text the same in both themes.
+
+---
+
+## Mistake #2 – Text is hard to read on the moving background
+![Login page dark](screenshots/01_Login_Page.png)
+
+**What is wrong:** The Vanta lines run across the text "Share confidential documents with confidence..." and the last line is hard to read.
+
+**My fix prompt:**
+> On the login page the Vanta network lines cross over the tagline text and I can't read it properly. Put a soft dark layer behind the TrustVault title and the tagline, or lower the line opacity in that area. Don't remove the animation.
+
+---
+
+## Mistake #3 – Forgot password box is white and still asks for a phone number
+![Forgot password old](screenshots/04_Forgot_Password_Old.png)
+
+**What is wrong (2 things):**
+1. The page is dark but the popup is bright white, so the colors don't match.
+2. It still says "Enter the phone number registered" and "Send OTP / SMS", but I already decided to use email only.
+
+**My fix prompt:**
+> The Forgot password popup is white even in dark mode, make it use the same theme variables as the rest of the site. Also it still asks for phone number and says SMS. Change it to email only: "Enter the email address registered with your account", button "Send code", note "A 6-digit code is sent to your registered email".
+
+---
+
+## Mistake #4 – Old SMS text still on the login page
+![Login page dark](screenshots/01_Login_Page.png)
+
+**What is wrong:** The small note under the button says *"Sign-in uses a one-time code sent to your registered email. By default new accounts are viewers who are verified by email and SMS codes."* But sign-in is now only username and password. The code is only for sign-up and forgot password. SMS is gone.
+
+**My fix prompt:**
+> The note under Enter the Vault is wrong now. Sign in is only username and password. Change the text to: "Sign in with your username and password. By default new accounts are viewers who are verified by a code sent to their email." Remove the word SMS everywhere in the frontend.
+
+---
+
+## Mistake #5 – OTP email goes to a fake address
+![Email OTP](screenshots/02_Email_OTP.png)
+
+**What is wrong:** The code mail came, but below it Gmail shows **"Address not found"**. The code was also sent to `manikonda_rohith@trustvault.local`, and that domain doesn't exist, so it bounced. The seed accounts had no real email.
+
+**My fix prompt:**
+> My OTP mail is bouncing with "Address not found" for manikonda_rohith@trustvault.local. The seed users don't have a real email. Make the seed users read their emails from SEED_*_EMAIL in the .env file, and if one is empty then don't try to send a mail, show a clear message "No email registered for this account". Also update the security test so it doesn't use the trustvault.local address.
+
+---
+
+## Mistake #6 – The + button covers the Viewer card
+![Owner view](screenshots/03_Owner_View.png)
+
+**What is wrong:** On the Overview page the round **+** button sits on top of the "Viewer" card at the bottom right, so I can't read the end of that card. Also the big box on the left has too much empty space around the small mascot.
+
+**My fix prompt:**
+> On Overview the floating + button is covering the Viewer role card. Add bottom padding to the main area so the last cards are never hidden. Also make the big mascot box smaller so the three count boxes on the right line up with it.
+
+---
+
+## Mistake #7 – Date format and category filter on Documents page
+![Documents viewer](screenshots/05_Documents_Viewer.png)
+
+**What is wrong (2 things):**
+1. The card shows the date as `2026-11-08` but the filter box uses `dd-mm-yyyy`. Two formats on one page is confusing.
+2. The second dropdown shows **"Other"** instead of "Any category", so it looks like the filter is already applied and only some files are shown.
+
+**My fix prompt:**
+> On the Documents page the card date is yyyy-mm-dd but the From box is dd-mm-yyyy. Show all dates as dd-mm-yyyy. Also the category dropdown shows "Other" by default, it should start on "Any category" and reset when I clear the filters.
+
+---
+
+## Mistake #8 – Warning message wording is confusing
+![Warning](screenshots/07_Warning.png)
+
+**What is wrong:** The sentence says *"...is immediately reported to the owner or any inappropriate activities."* That doesn't make sense. Some other texts in my app also have spelling mistakes: "**Atleast** 12 characters", "**inproper** behaviour", "a fourth warning **will blocks** your account".
+
+**My fix prompt:**
+> The Warning popup sentence is confusing: "reported to the owner or any inappropriate activities". Rewrite it clearly: "Tampering with documents without the owner's consent is strictly prohibited. This violates vault security, is logged as improper behavior and is reported to the owner." Also fix these spellings in the whole project: "Atleast" → "At least", "inproper" → "improper", "will blocks" → "will block". Search app.js and index.html for any more.
+
+---
+
+## Mistake #9 – Secret files were inside my zip
+**What is wrong:** When I zipped the project, `backend/.env` (has my Gmail app password and secret keys) and `backend/data/initial_credentials.txt` (has the first passwords) went inside the zip. `.gitignore` hides them from Git, but the zip does not care about `.gitignore`.
+
+**My fix prompt:**
+> Make a small script that creates a clean zip of TrustVault for sharing. It must leave out backend/.env, backend/db.env, backend/data/, .git and any .log files. Also remind me to revoke and make a new Google app password because the old one was in a zip.
+
+---
+**Note**: I used AI to generate different approaches of prompts to suit my idea. 
