@@ -4,12 +4,15 @@ Codes never leave the server except through the configured email provider.
 Delivery providers:
   smtp     (smtplib + STARTTLS, e.g. Gmail with an app password)
   sendgrid (v3 Mail Send API)
+  twilio   (Twilio Email API over HTTPS)
   outbox   development only, appends to OTP_OUTBOX_PATH on the server. Refused in production.
 
 Purposes: SIGNUP (verify the e-mail address of a new account) and RESET (forgot password).
 """
 from __future__ import annotations
 
+import base64
+import html
 import json
 import logging
 import os
@@ -147,6 +150,23 @@ def send_email(to: str, subject: str, body: str) -> None:
         if provider == "outbox":
             return _outbox("email", to, body)
         sender_header, sender_addr = _sender()
+        if provider == "twilio":
+            if not (settings.twilio_api_key_sid and settings.twilio_api_key_secret and sender_addr):
+                raise DeliveryError("Twilio Email is not configured")
+            credentials = base64.b64encode(
+                f"{settings.twilio_api_key_sid}:{settings.twilio_api_key_secret}".encode("utf-8")
+            ).decode("ascii")
+            escaped_body = html.escape(body).replace("\\n", "<br>")
+            payload = {
+                "from": {"address": sender_addr, "name": "TrustVault"},
+                "to": [{"address": to}],
+                "content": {"subject": subject, "text": body, "html": f"<p>{escaped_body}</p>"},
+            }
+            return _http_post(
+                "https://comms.twilio.com/v1/Emails",
+                data=json.dumps(payload).encode(),
+                headers={"Authorization": f"Basic {credentials}", "Content-Type": "application/json"},
+            )
         if provider == "sendgrid":
             if not (settings.sendgrid_api_key and sender_addr):
                 raise DeliveryError("SendGrid is not configured")
