@@ -63,6 +63,7 @@ class Settings:
     gmail_user: str = os.getenv("GMAIL_USER", "")
     otp_outbox_path: str = os.getenv("OTP_OUTBOX_PATH", "/app/data/otp_outbox.log")
 
+    demo_initial_password: str = os.getenv("DEMO_INITIAL_PASSWORD", "")
     initial_credentials_file: str = os.getenv("INITIAL_CREDENTIALS_FILE", "/app/data/initial_credentials.txt")
     frontend_dir: str = os.getenv("FRONTEND_DIR", os.path.join(os.path.dirname(__file__), "..", "frontend"))
 
