@@ -140,7 +140,8 @@ def _sender() -> tuple[str, str]:
     if not EMAIL_RE.match(addr or ""):
         if addr:
             log.warning("MAIL_FROM is not a valid address; using SMTP_USER as the sender instead")
-        addr = settings.smtp_user if EMAIL_RE.match(settings.smtp_user or "") else ""
+        fallback = settings.gmail_user if settings.email_provider == "gmail_api" else settings.smtp_user
+        addr = fallback if EMAIL_RE.match(fallback or "") else ""
     return formataddr((name or "TrustVault", addr)), addr
 
 
@@ -150,6 +151,42 @@ def send_email(to: str, subject: str, body: str) -> None:
         if provider == "outbox":
             return _outbox("email", to, body)
         sender_header, sender_addr = _sender()
+        if provider == "gmail_api":
+            if not (settings.gmail_client_id and settings.gmail_client_secret and
+                    settings.gmail_refresh_token and settings.gmail_user and sender_addr):
+                raise DeliveryError("Gmail API is not configured")
+            # Exchange the long-lived refresh token for a short-lived access token.
+            from urllib.parse import urlencode
+            token_req = urllib.request.Request(
+                "https://oauth2.googleapis.com/token",
+                data=urlencode({
+                    "client_id": settings.gmail_client_id,
+                    "client_secret": settings.gmail_client_secret,
+                    "refresh_token": settings.gmail_refresh_token,
+                    "grant_type": "refresh_token",
+                }).encode("ascii"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(token_req, timeout=15, context=ssl.create_default_context()) as resp:
+                    token_data = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                raise DeliveryError(f"Gmail OAuth token request failed (HTTP {exc.code})") from exc
+            except urllib.error.URLError as exc:
+                raise DeliveryError(f"Gmail OAuth token request failed: {exc.reason}") from exc
+            access_token = token_data.get("access_token")
+            if not access_token:
+                raise DeliveryError("Gmail OAuth did not return an access token")
+            msg = EmailMessage()
+            msg["From"], msg["To"], msg["Subject"] = sender_header, to, subject
+            msg.set_content(body)
+            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+            return _http_post(
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                data=json.dumps({"raw": raw}).encode("utf-8"),
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            )
         if provider == "twilio":
             if not (settings.twilio_api_key_sid and settings.twilio_api_key_secret and sender_addr):
                 raise DeliveryError("Twilio Email is not configured")
