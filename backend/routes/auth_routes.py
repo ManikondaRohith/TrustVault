@@ -1,6 +1,7 @@
 """Sign-up (email code), sign-in (password only), forgot password (email code), sign-out, password change."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import timedelta
 
@@ -20,6 +21,7 @@ from security import (EMAIL_RE, USERNAME_RE, client_ip, clear_session_cookie, ha
 from services import audit_service, otp_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+log = logging.getLogger("trustvault.otp")
 
 
 def _me(u: User) -> MeOut:
@@ -34,7 +36,9 @@ def _start_session(response: Response, user: User) -> None:
 def _deliver(fn):
     try:
         fn()
-    except otp_service.DeliveryError:
+    except otp_service.DeliveryError as exc:
+        # Log the provider's safe diagnostic (HTTP status / network reason), never credentials.
+        log.error("OTP provider delivery failure: %s", exc)
         raise HTTPException(503, "We could not send the verification code. Please try again later.")
 
 
