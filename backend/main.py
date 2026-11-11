@@ -70,9 +70,17 @@ def seed() -> None:
                 db.add(user)
                 created.append(username)
             else:
-                # Correct demo roles without changing existing passwords, emails, or account state.
+                # Correct demo roles. A temporary, explicitly enabled flag allows a one-time
+                # reset of the five demo passwords without changing email or account identity.
                 user.display_name = display
                 user.role = role
+                if os.getenv("RESET_DEMO_PASSWORDS", "").strip().lower() == "true":
+                    reset_password = settings.demo_initial_password
+                    if not reset_password:
+                        raise RuntimeError("DEMO_INITIAL_PASSWORD is required to reset demo accounts")
+                    user.password_hash = hash_password(reset_password)
+                    user.must_reset = False
+                    user.token_version += 1
             users[username] = user
         db.flush()
 
