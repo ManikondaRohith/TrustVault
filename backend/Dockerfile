@@ -12,7 +12,7 @@ RUN groupadd --system --gid 10001 tv && useradd --system --uid 10001 --gid tv --
 WORKDIR /app/backend
 COPY backend/requirements.txt ./
 # Every package is checked against the SHA-256 hashes in requirements.txt; a mismatch aborts the build.
-RUN pip install --require-hashes --no-deps -r requirements.txt
+RUN pip install --require-hashes --no-deps -r requirements.txt && \\\n    pip install --no-cache-dir 'psycopg[binary]==3.2.9'
 
 COPY backend/ /app/backend/
 COPY frontend/ /app/frontend/
