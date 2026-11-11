@@ -10,7 +10,8 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<button id="tg" class="g" type="button" aria-label="Switch light or dark mode"><svg class="s" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg><svg class="m" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10z"/></svg></button>
+<a class="skip" href="#main" id="sk">Skip to main content</a>
+<button id="tg" class="g" type="button" aria-label="Switch light or dark mode"><svg class="s" aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg><svg class="m" aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10z"/></svg></button>
 
 <main id="login">
   <section class="stage" id="stage">
@@ -22,12 +23,12 @@
 
   <form class="fm" id="fm" novalidate>
     <div><h2>WELCOME BACK</h2><p class="mut sub0">Sign in to open your documents.</p></div>
-    <div class="tabs"><button type="button" class="on" data-m="in">Sign in</button><button type="button" data-m="up">Create account</button></div>
-    <label>Username (Not Email ID)<input id="un" required maxlength="32" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
-    <label>Password<input id="pw" type="password" required maxlength="128" autocomplete="current-password"></label>
+    <div class="tabs" role="group" aria-label="Choose sign in or create account"><button type="button" class="on" data-m="in" aria-pressed="true">Sign in</button><button type="button" data-m="up" aria-pressed="false">Create account</button></div>
+    <label>Username (Not Email ID)<input id="un" required aria-required="true" aria-describedby="er" maxlength="32" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+    <label>Password<input id="pw" type="password" required aria-required="true" aria-describedby="er" maxlength="128" autocomplete="current-password"></label>
     <div class="fpw-row" id="fpw-row"><button type="button" class="fpw-link" id="fpw-link" aria-haspopup="dialog">Forgot Password?</button></div>
-    <p class="pwrule su" hidden>Atleast 12 characters with uppercase, lowercase, a number and a symbol.</p>
-    <label class="su" hidden>Email 📧<input id="em0" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com"></label>
+    <p class="pwrule su" id="pwrule" hidden>At least 12 characters with uppercase, lowercase, a number and a symbol.</p>
+    <label class="su" hidden>Email 📧<input id="em0" type="email" aria-describedby="er" maxlength="254" autocomplete="email" placeholder="you@example.com"></label>
     <div id="er" class="er" role="alert"></div>
     <button id="sb" type="submit">Enter the Vault</button>
     <small class="hint">Sign in with your username and password. By default new accounts are viewers who are verified by a code sent to their email.</small>
@@ -38,17 +39,17 @@
 
 <div id="app" hidden>
   <header><h1>TrustVault</h1><span class="sp"></span><span id="bd"></span><span id="who"></span><span class="role" id="rl"></span><button class="g" id="lo" type="button">Sign out</button></header>
-  <nav id="nv"></nav>
-  <section id="main"></section>
+  <nav id="nv" aria-label="Main"></nav>
+  <main id="main" tabindex="-1"></main>
 </div>
 
-<div class="fab" id="fab" hidden>
+<div class="fab" id="fab" role="group" aria-label="Quick add" hidden>
+  <button class="main" id="fb" type="button" aria-label="Quick upload" aria-expanded="false" aria-haspopup="true"><span class="pl">+</span></button>
   <button class="sub s1" type="button" data-f="file" data-label="Upload file" aria-label="Upload file" title="Upload file (.pdf .txt .doc .docx .jpg .png .webp .svg, 10 MiB)">📁</button>
   <button class="sub s2" type="button" data-f="txt" data-label="Text page" aria-label="Create text page" title="Create text page">📝</button>
-  <button class="main" id="fb" type="button" aria-label="Quick upload" aria-expanded="false"><span class="pl">+</span></button>
 </div>
-<input type="file" id="ff" accept=".pdf,.txt,.doc,.docx,.jpg,.jpeg,.png,.webp,.svg" hidden>
-<div class="ts" id="ts" role="status" aria-live="polite"></div>
+<input type="file" id="ff" aria-label="Choose a file to upload" accept=".pdf,.txt,.doc,.docx,.jpg,.jpeg,.png,.webp,.svg" hidden>
+<div class="ts" id="ts" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Forgot Password dialog: email code -> captcha -> new password (server-verified) -->
 <div class="fpw-ov" id="fpw-ov" hidden>
