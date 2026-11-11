@@ -1,6 +1,18 @@
 # TrustVault - A Secure document sharing Website with Audit Trails
 
-Website: [https://deploy-preview-1--trustvault2.netlify.app/](https://trustvault-1-jaid.onrender.com)
+Website: https://trustvault-1-jaid.onrender.com
+
+**Demo Accounts**
+
+1. Manikonda_Rohith 
+2. Krishna 
+3. Naveen 
+4. Gowtham 
+5. Keerthi
+
+**Password: vault@123** for all demo accounts.
+
+### *Disclaimer: Email Gateway Integration were temporarily stopped due to mail account issue.*
 
 Confidential document sharing with server-enforced permissions, email-verified sign-up and
 password reset, and a tamper-resistant audit trail.
