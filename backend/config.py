@@ -55,6 +55,8 @@ class Settings:
     smtp_starttls: bool = _bool("SMTP_STARTTLS", True)
     mail_from: str = os.getenv("MAIL_FROM", "")
     sendgrid_api_key: str = os.getenv("SENDGRID_API_KEY", "")
+    twilio_api_key_sid: str = os.getenv("TWILIO_API_KEY_SID", "")
+    twilio_api_key_secret: str = os.getenv("TWILIO_API_KEY_SECRET", "")
     otp_outbox_path: str = os.getenv("OTP_OUTBOX_PATH", "/app/data/otp_outbox.log")
 
     initial_credentials_file: str = os.getenv("INITIAL_CREDENTIALS_FILE", "/app/data/initial_credentials.txt")
@@ -84,8 +86,8 @@ class Settings:
                 problems.append("COOKIE_SECURE must be true in production")
             if self.email_provider == "outbox":
                 problems.append("the 'outbox' OTP provider is for development only")
-        if self.email_provider not in {"smtp", "sendgrid", "outbox"}:
-            problems.append("EMAIL_PROVIDER must be smtp, sendgrid or outbox")
+        if self.email_provider not in {"smtp", "sendgrid", "twilio", "outbox"}:
+            problems.append("EMAIL_PROVIDER must be smtp, sendgrid, twilio or outbox")
         if problems:
             raise RuntimeError("Unsafe or incomplete configuration:\n  - " + "\n  - ".join(problems))
 
