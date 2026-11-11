@@ -17,10 +17,19 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL", "").strip()
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 @dataclass(frozen=True)
 class Settings:
     app_env: str = os.getenv("APP_ENV", "production").lower()
-    database_url: str = os.getenv("DATABASE_URL", "")
+    database_url: str = _database_url()
     jwt_secret: str = os.getenv("JWT_SECRET", "")
     otp_pepper: str = os.getenv("OTP_PEPPER", "")
     passcode_pepper: str = os.getenv("PASSCODE_PEPPER", "")
@@ -38,7 +47,7 @@ class Settings:
     lockout_minutes: int = 15
     max_upload_bytes: int = 10 * 1024 * 1024
 
-    email_provider: str = os.getenv("EMAIL_PROVIDER", "smtp").lower()      # smtp | sendgrid | outbox
+    email_provider: str = os.getenv("EMAIL_PROVIDER", "smtp").lower()
     smtp_host: str = os.getenv("SMTP_HOST", "")
     smtp_port: int = _int("SMTP_PORT", 587)
     smtp_user: str = os.getenv("SMTP_USER", "")
@@ -64,10 +73,9 @@ class Settings:
         return self.app_env == "production"
 
     def validate(self) -> None:
-        """Refuse to boot with unsafe configuration."""
         problems = []
-        if not self.database_url.startswith("mysql+pymysql://"):
-            problems.append("DATABASE_URL must be a mysql+pymysql:// URL")
+        if not self.database_url.startswith("postgresql+psycopg://"):
+            problems.append("DATABASE_URL must be a PostgreSQL URL using Psycopg 3")
         for name in ("jwt_secret", "otp_pepper", "passcode_pepper"):
             if len(getattr(self, name)) < 32:
                 problems.append(f"{name.upper()} must be at least 32 characters")
