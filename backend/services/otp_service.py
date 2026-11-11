@@ -172,6 +172,18 @@ def send_email(to: str, subject: str, body: str) -> None:
                 with urllib.request.urlopen(token_req, timeout=15, context=ssl.create_default_context()) as resp:
                     token_data = json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
+                # Log Google's safe OAuth error code/description, never request credentials.
+                try:
+                    error_payload = json.loads(exc.read().decode("utf-8"))
+                    oauth_error = error_payload.get("error", "unknown")
+                    oauth_description = error_payload.get("error_description", "")
+                    log.error(
+                        "Gmail OAuth rejected refresh-token exchange: %s — %s",
+                        str(oauth_error)[:100],
+                        str(oauth_description)[:300],
+                    )
+                except Exception:
+                    log.error("Gmail OAuth token request failed (HTTP %s)", exc.code)
                 raise DeliveryError(f"Gmail OAuth token request failed (HTTP {exc.code})") from exc
             except urllib.error.URLError as exc:
                 raise DeliveryError(f"Gmail OAuth token request failed: {exc.reason}") from exc
