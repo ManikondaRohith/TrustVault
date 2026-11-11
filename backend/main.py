@@ -33,16 +33,16 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'
        "frame-ancestors 'none'")
 
 # ---------------------------------------------------------------------------
-# Seed data (first boot only)
+# Demo account bootstrap (safe to run on every startup)
 # ---------------------------------------------------------------------------
 SEED_USERS = [
     ("Manikonda_Rohith", "Manikonda Rohith", "ADMIN"),
+    ("Krishna", "Krishna", "OWNER"),
     ("Naveen", "Naveen", "OWNER"),
-    ("Gowtham", "Gowtham", "OWNER"),
-    ("Krishna", "Krishna", "VIEWER"),
+    ("Gowtham", "Gowtham", "VIEWER"),
     ("Keerthi", "Keerthi", "VIEWER"),
 ]
-SEED_DOCS = [  # (owner, name, category, text, grants)
+SEED_DOCS = [  # created only on a genuinely empty database
     ("Naveen", "Salary-Letter-Krishna.txt", "HR",
      "Dear Krishna, your revised salary takes effect next month.", {"Krishna": "READ"}),
     ("Gowtham", "Vendor-Contract-Helix.txt", "Contracts", "Helix Ltd. supply agreement. Confidential.", {}),
@@ -54,41 +54,47 @@ SEED_DOCS = [  # (owner, name, category, text, grants)
 def seed() -> None:
     db = SessionLocal()
     try:
-        if db.execute(select(func.count()).select_from(User)).scalar():
-            return
-        creds, users = [], {}
+        existing_count = db.execute(select(func.count()).select_from(User)).scalar() or 0
+        users = {}
+        created = []
         for username, display, role in SEED_USERS:
-            pw = generate_strong_password()
-            email = settings.seed_emails.get(username, "")
-            u = User(username=username, display_name=display, role=role, email=email.lower() or None,
-                     password_hash=hash_password(pw), is_verified=bool(email), must_reset=True)
-            db.add(u)
-            users[username] = u
-            creds.append(f"{username}\t{role}\t{pw}")
+            user = db.execute(select(User).where(User.username == username)).scalar_one_or_none()
+            if user is None:
+                initial_password = settings.demo_initial_password
+                if not initial_password:
+                    raise RuntimeError("DEMO_INITIAL_PASSWORD is required to create missing demo accounts")
+                user = User(
+                    username=username, display_name=display, role=role, email=None,
+                    password_hash=hash_password(initial_password), is_verified=False, must_reset=True,
+                )
+                db.add(user)
+                created.append(username)
+            else:
+                # Correct demo roles without changing existing passwords, emails, or account state.
+                user.display_name = display
+                user.role = role
+            users[username] = user
         db.flush()
-        for owner, name, cat, text, grants in SEED_DOCS:
-            data = text.encode()
-            d = Document(owner_id=users[owner].id, name=name, category=cat, mime_type="text/plain; charset=utf-8",
-                         is_text=True, size_bytes=len(data), sha256=sha256_hex(data))
-            db.add(d)
-            db.flush()
-            db.add(DocumentBlob(document_id=d.id, content=data))
-            for who, level in grants.items():
-                db.add(DocumentGrant(document_id=d.id, user_id=users[who].id, level=level))
-            audit_service.record("system", "upload", "allowed", "seed", document_ref=f"D-{d.id}",
-                                 doc_owner_id=d.owner_id)
-        db.commit()
 
-        # One-time passwords for the seed accounts: written to a 0600 file, never to the browser.
-        # Each account must choose a new password at first sign-in. Delete the file afterwards.
-        path = settings.initial_credentials_file
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write("# TrustVault first-boot credentials. Every account must change its password at first\n"
-                    "# sign-in. DELETE THIS FILE once the accounts have been handed over.\n")
-            f.write("\n".join(creds) + "\n")
-        log.warning("Seeded %d accounts. One-time passwords written to %s (mode 0600).", len(creds), path)
+        if existing_count == 0:
+            for owner, name, cat, content, grants in SEED_DOCS:
+                data = content.encode()
+                doc = Document(owner_id=users[owner].id, name=name, category=cat,
+                               mime_type="text/plain; charset=utf-8", is_text=True,
+                               size_bytes=len(data), sha256=sha256_hex(data))
+                db.add(doc)
+                db.flush()
+                db.add(DocumentBlob(document_id=doc.id, content=data))
+                for who, level in grants.items():
+                    db.add(DocumentGrant(document_id=doc.id, user_id=users[who].id, level=level))
+                audit_service.record("system", "upload", "allowed", "seed", document_ref=f"D-{doc.id}",
+                                     doc_owner_id=doc.owner_id)
+        db.commit()
+        if created:
+            log.warning("Created %d missing demo accounts with forced password change: %s",
+                        len(created), ", ".join(created))
+        else:
+            log.info("Demo accounts checked; roles are up to date.")
     finally:
         db.close()
 
