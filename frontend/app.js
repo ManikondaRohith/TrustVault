@@ -20,6 +20,46 @@ function errMsg(e) { return e instanceof API.ApiError ? e.detail : 'Something we
 function fail(e) { const m = errMsg(e); if (e.status === 423) blockedAlert(); else toast(m, 1); shk($('#main')); return null; }
 async function safe(p) { try { return await p; } catch (e) { return fail(e); } }
 
+/* ---- accessibility: dialogs (focus trap, Esc, focus return, background inert) and small ARIA fix-ups ---- */
+const FOC = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+let dlgN = 0, dlgId = 0;
+const bgInert = on => ['#login', '#app', '#fab', '#open'].forEach(s => { const e = $(s); if (e) { if (on) e.setAttribute('inert', ''); else e.removeAttribute('inert'); } });
+function enhance(root) {
+  const r = root || document;
+  r.querySelectorAll('.er:not([role])').forEach(e => e.setAttribute('role', 'alert'));
+  r.querySelectorAll('svg:not([aria-label]):not([aria-hidden])').forEach(e => { e.setAttribute('aria-hidden', 'true'); e.setAttribute('focusable', 'false'); });
+  r.querySelectorAll('thead th:not([scope])').forEach(e => e.setAttribute('scope', 'col'));
+  r.querySelectorAll('table:not([aria-label])').forEach(t => {
+    const hs = [...document.querySelectorAll('h2,h3')].filter(x => x.compareDocumentPosition(t) & 4);
+    t.setAttribute('aria-label', hs.length ? hs[hs.length - 1].textContent.trim() : 'Data table');
+  });
+}
+function dlg(o, opt) {
+  const escClose = !!(opt && opt.esc), opener = document.activeElement, box = o.firstElementChild;
+  o.setAttribute('role', o.getAttribute('role') || 'dialog'); o.setAttribute('aria-modal', 'true');
+  box.querySelectorAll('h3').forEach(h => h.setAttribute('aria-level', '2'));   /* popup titles are level 2 for assistive tech; look unchanged */
+  const hd = box.querySelector('h2,h3'); if (hd) { hd.id = hd.id || 'dh' + (++dlgId); o.setAttribute('aria-labelledby', hd.id); }
+  enhance(box); box.tabIndex = -1;
+  document.querySelectorAll('.md').forEach(x => { if (x !== o) x.setAttribute('inert', ''); }); dlgN++; bgInert(true);
+  const rm = o.remove.bind(o); let gone = 0;
+  o.remove = () => {
+    if (gone) return; gone = 1; rm(); dlgN = Math.max(0, dlgN - 1);
+    const rest = [...document.querySelectorAll('.md')]; if (rest.length) rest[rest.length - 1].removeAttribute('inert');
+    if (!dlgN) bgInert(false);
+    if (opener && opener.isConnected && !opener.closest('[inert]') && !opener.closest('[hidden]')) try { opener.focus(); } catch (e) { /* ignore */ }
+  };
+  o.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && escClose) { e.preventDefault(); e.stopPropagation(); (o.close || o.remove)(); return; }
+    if (e.key !== 'Tab') return;
+    const f = [...box.querySelectorAll(FOC)].filter(x => x.offsetParent !== null), cu = document.activeElement;
+    if (!f.length) { e.preventDefault(); box.focus(); return; }
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && (cu === first || !box.contains(cu) || cu === box)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (cu === last || !box.contains(cu))) { e.preventDefault(); first.focus(); }
+  });
+  (box.querySelector('input:not([type=hidden]),textarea,select') || box.querySelector(FOC) || box).focus();
+}
+
 function modal(html, mount, cls) {
   const o = document.createElement('div'); o.className = 'md' + (cls ? ' ' + cls : '');
   o.innerHTML = `<div>${html}</div>`;
@@ -27,7 +67,7 @@ function modal(html, mount, cls) {
   const close = () => { o.dispatchEvent(new Event('closed')); o.remove(); };
   o.close = close;
   o.querySelectorAll('.cl').forEach(b => b.addEventListener('click', close));
-  document.body.append(o); o.querySelectorAll('input[type=password]').forEach(addEye);
+  document.body.append(o); dlg(o, { esc: !(cls && cls.includes('gt')) }); o.querySelectorAll('input[type=password]').forEach(addEye);
   const first = o.querySelector('input,textarea,select,button'); first && first.focus();
   mount && mount(o, o.firstChild);
   return o;
@@ -86,7 +126,8 @@ $$('.tabs button').forEach(b => b.addEventListener('click', () => setMode(b.data
 function setMode(m) {
   mode = m; $$('.su').forEach(x => x.hidden = mode !== 'up');
   $('#pw').autocomplete = mode === 'up' ? 'new-password' : 'current-password';
-  $$('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.m === mode));
+  $$('.tabs button').forEach(x => { x.classList.toggle('on', x.dataset.m === mode); x.setAttribute('aria-pressed', String(x.dataset.m === mode)); });
+  $('#pw').setAttribute('aria-describedby', mode === 'up' ? 'er pwrule' : 'er');
   $('#sb').textContent = mode === 'in' ? 'Enter the vault' : 'Create my account'; $('#er').textContent = ''; mood('idle');
 }
 const bad = m => { $('#er').textContent = m; mood('sad', 1400); shk($('#fm')); };
@@ -168,10 +209,10 @@ const V = {};
 function build() {
   if (me.must_reset) return resetPw(build);
   $('#who').textContent = me.display_name; $('#rl').textContent = me.role.toLowerCase();
-  $('#nv').innerHTML = NAV.filter(n => n[2].includes(me.role)).map((n, i) => `<button type="button" data-v="${n[0]}"><i>0${i + 1}</i>${n[1]}</button>`).join('');
+  $('#nv').innerHTML = NAV.filter(n => n[2].includes(me.role)).map((n, i) => `<button type="button" data-v="${n[0]}"><i aria-hidden="true">0${i + 1}</i>${n[1]}</button>`).join('');
   badges(); fabClose(); $('#fab').hidden = me.role !== 'OWNER'; cur = null; show('home');
 }
-$('#nv').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.v !== cur) show(b.dataset.v); });
+$('#nv').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.v !== cur) show(b.dataset.v).then(() => { const h = $('#main h2'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); } }); });
 
 async function show(v) {
   if (!me || !NAV.some(n => n[0] === v && n[2].includes(me.role))) return;
@@ -180,7 +221,8 @@ async function show(v) {
   cur = v; RD = null; PC.clear(); m.className = ''; m.innerHTML = ''; void m.offsetWidth;
   try { await V[v](m); } catch (e) { fail(e); }
   m.querySelectorAll('input[type=password]').forEach(addEye); m.classList.add('in-' + v); warnCheck();
-  $$('#nv button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $$('#nv button').forEach(b => { b.classList.toggle('on', b.dataset.v === v); if (b.dataset.v === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  const nm = (NAV.find(n => n[0] === v) || [])[1]; document.title = (nm ? nm + ' · ' : '') + 'TrustVault'; enhance(m);
 }
 
 function badges() { $('#bd').innerHTML = (me.is_verified ? '<b class="bdg v">✓ VERIFIED</b>' : '') + (me.warnings ? `<b class="bdg w">⚠ WARNINGS ${me.warnings}</b>` : ''); }
@@ -188,8 +230,8 @@ function badges() { $('#bd').innerHTML = (me.is_verified ? '<b class="bdg v">✓
 function warnCheck() {
   if (!me || me.role !== 'VIEWER' || !(me.warnings > me.warnings_seen) || $('.md.wn')) return;
   const o = document.createElement('div'); o.className = 'md gt wn'; o.setAttribute('role', 'alertdialog');
-  o.innerHTML = `<div><h2>⚠ Warning</h2><p>STAY ALERT. Tampering with documents without owner consent is strictly prohibited. This action violates vault security, is logged as improper behavior, and is immediately reported to the owner or any inappropriate activities.</p><p class="mut">Warnings on record: ${me.warnings}. A fourth warning blocks this account.</p><button id="wk" type="button">I Understand &amp; Agree</button></div>`;
-  document.body.append(o);
+  o.innerHTML = `<div><h2>⚠ Warning</h2><p>STAY ALERT. Tampering with documents without owner consent is strictly prohibited. This action violates vault security, is logged as improper behavior, and is immediately reported to the owner.</p><p class="mut">Warnings on record: ${me.warnings}. A fourth warning blocks this account.</p><button id="wk" type="button">I Understand &amp; Agree</button></div>`;
+  document.body.append(o); dlg(o);
   o.querySelector('#wk').addEventListener('click', async () => { try { const r = await API.safety.ack(); me.warnings_seen = r.warnings_seen; o.remove(); } catch (e) { fail(e); } });
 }
 
@@ -231,7 +273,7 @@ async function withPasscode(d, fn) {
     if (e.status !== 428 && !(e.status === 403 && PC.has(d.id) && /passcode/i.test(e.detail))) throw e;
     PC.delete(d.id);
     return new Promise((resolve, reject) => {
-      modal(`<h3>🔒 Passcode required</h3><p class="mut">The owner protected ${esc(d.name)}.</p><p><input id="pcq" class="w100" type="password" placeholder="Document passcode" autocomplete="off"></p><div class="er"></div><div class="acts"><button id="pcu" type="button">Unlock</button><button class="g cl" type="button">Cancel</button></div>`, (o, bx) => {
+      modal(`<h3>🔒 Passcode required</h3><p class="mut">The owner protected ${esc(d.name)}.</p><p><input id="pcq" aria-label="Document passcode" class="w100" type="password" placeholder="Document passcode" autocomplete="off"></p><div class="er"></div><div class="acts"><button id="pcu" type="button">Unlock</button><button class="g cl" type="button">Cancel</button></div>`, (o, bx) => {
         o.addEventListener('closed', () => resolve(null));
         const go = async () => {
           const v = o.querySelector('#pcq').value;
@@ -250,7 +292,7 @@ const A = {
     const r = await safe(withPasscode(d, pc => API.docs.content(d.id, pc))); if (!r) return;
     let body;
     if (d.is_text) body = `<pre>${esc(await r.blob.text())}</pre>`;
-    else if (IMG.test(d.name)) body = '<img alt="" class="preview" id="pv">';
+    else if (IMG.test(d.name)) body = `<img alt="Preview of ${esc(d.name)}" class="preview" id="pv">`;
     else body = `<p>Binary file, ${(d.size / 1024).toFixed(1)} KB. Use Download to open it.</p>`;
     modal(`<h3>${esc(d.name)}</h3><p class="meta">${esc(d.id)} · SHA-256 ${esc(d.sha256.slice(0, 16))}…</p>${body}<div class="acts"><button class="g cl" type="button">Close</button></div>`, o => {
       const img = o.querySelector('#pv');
@@ -269,13 +311,13 @@ const A = {
   async edt(d) {
     const r = await safe(withPasscode(d, pc => API.docs.content(d.id, pc))); if (!r) return;
     const text = await r.blob.text();
-    modal(`<h3>Edit ${esc(d.name)}</h3><p><textarea id="et" class="w100" rows="9" maxlength="20000">${esc(text)}</textarea></p><div class="acts"><button id="es" type="button">Save</button><button class="g cl" type="button">Cancel</button></div>`, o =>
+    modal(`<h3>Edit ${esc(d.name)}</h3><p><textarea id="et" aria-label="Document text" class="w100" rows="9" maxlength="20000">${esc(text)}</textarea></p><div class="acts"><button id="es" type="button">Save</button><button class="g cl" type="button">Cancel</button></div>`, o =>
       o.querySelector('#es').addEventListener('click', async () => {
         if (await safe(API.docs.editText(d.id, o.querySelector('#et').value, PC.get(d.id)))) { toast('Saved and logged.'); o.remove(); RD && RD(); }
       }));
   },
   ren(d) {
-    modal(`<h3>Rename</h3><p><input id="rn" class="w100" value="${esc(d.name)}" maxlength="80"></p><div class="acts"><button id="rs" type="button">Save</button><button class="g cl" type="button">Cancel</button></div>`, o =>
+    modal(`<h3>Rename</h3><p><input id="rn" aria-label="New file name" class="w100" value="${esc(d.name)}" maxlength="80"></p><div class="acts"><button id="rs" type="button">Save</button><button class="g cl" type="button">Cancel</button></div>`, o =>
       o.querySelector('#rs').addEventListener('click', async () => {
         const n = o.querySelector('#rn').value.trim(), x = s => s.split('.').pop().toLowerCase();
         if (!n || x(n) !== x(d.name)) return toast('Name needed, and the file type cannot change.', 1);
@@ -300,8 +342,8 @@ const A = {
 V.docs = async m => {
   const owners = await API.docs.owners();
   m.innerHTML = `<h2>Documents</h2><p class="mut">${me.role === 'ADMIN' ? 'Administrators see metadata only. Content needs a grant, and administrators cannot hold one.' : 'Only what you own or were granted appears here.'}</p>
-  <div class="bar" id="bar"><span class="mag" id="mg"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/></svg></span><input id="q" placeholder="Search name" maxlength="80"><select id="fo"><option value="">Any owner</option>${owners.map(o => `<option>${esc(o)}</option>`).join('')}</select><select id="fc"><option value="">Any category</option>${CATS.map(c => `<option>${c}</option>`).join('')}</select><label class="ck">From <input type="date" id="fd"></label></div>
-  <div class="grid" id="gr"></div>${me.role === 'ADMIN' ? '' : '<div class="bar"><input id="pb" placeholder="Probe a document ID" maxlength="24"><button class="g" id="pg" type="button">Probe</button></div>'}`;
+  <div class="bar" id="bar"><span class="mag" id="mg"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/></svg></span><input id="q" aria-label="Search documents by name" placeholder="Search name" maxlength="80"><select id="fo" aria-label="Filter by owner"><option value="">Any owner</option>${owners.map(o => `<option>${esc(o)}</option>`).join('')}</select><select id="fc" aria-label="Filter by category"><option value="">Any category</option>${CATS.map(c => `<option>${c}</option>`).join('')}</select><label class="ck">From <input type="date" id="fd"></label></div>
+  <div class="grid" id="gr"></div>${me.role === 'ADMIN' ? '' : '<div class="bar"><input id="pb" aria-label="Document ID to probe" placeholder="Probe a document ID" maxlength="24"><button class="g" id="pg" type="button">Probe</button></div>'}`;
   let docs = [], seq = 0;
   RD = async () => {
     const my = ++seq;
@@ -313,7 +355,7 @@ V.docs = async m => {
       if (d.can.edit && d.is_text) b.push(['edt', 'Edit']); if (d.can.rename) b.push(['ren', 'Rename']);
       if (d.access !== 'owner' && me.role !== 'ADMIN' && d.can.read) b.push(['dm', 'Message owner']);
       if (d.can.own) b.push(['del', 'Delete']); if (d.owner_blocked) b = [['open', 'Open']];
-      return `<article class="card" data-i="${i}"><span class="ext">${esc(d.name.split('.').pop())}</span><h3>${esc(d.name)}</h3><p class="meta">${esc(d.id)} · ${esc(d.owner)} · ${esc(d.category)} · ${esc(d.date)}</p><span class="lv">${esc(d.access)}</span>${d.has_passcode ? '<b class="bdg l">Private Document 🔒</b>' : ''}${d.owner_blocked ? '<b class="bdg b">OWNER BLOCKED</b>' : ''}<div class="acts">${b.map(x => `<button class="g" type="button" data-a="${x[0]}" data-i="${i}">${x[1]}</button>`).join('')}</div></article>`;
+      return `<article class="card" data-i="${i}"><span class="ext">${esc(d.name.split('.').pop())}</span><h3>${esc(d.name)}</h3><p class="meta">${esc(d.id)} · ${esc(d.owner)} · ${esc(d.category)} · ${esc(d.date)}</p><span class="lv">${esc(d.access)}</span>${d.has_passcode ? '<b class="bdg l">Private Document 🔒</b>' : ''}${d.owner_blocked ? '<b class="bdg b">OWNER BLOCKED</b>' : ''}<div class="acts">${b.map(x => `<button class="g" type="button" data-a="${x[0]}" data-i="${i}" aria-label="${x[1]}: ${esc(d.name)}">${x[1]}</button>`).join('')}</div></article>`;
     }).join('') || EMPTY('No documents found. Try a different search.');
     $$('#gr .card').forEach(c => c.style.setProperty('--d', (Number(c.dataset.i) * 70) + 'ms'));
   };
@@ -328,9 +370,9 @@ V.docs = async m => {
 V.access = async m => {
   const [list, users] = await Promise.all([API.docs.list({}), API.docs.grantable()]);
   const mine = list.documents.filter(d => d.access === 'owner');
-  m.innerHTML = '<h2>Who may open what</h2>' + (mine.length ? `<div class="bar"><select id="ad">${mine.map(d => `<option value="${esc(d.id)}">${esc(d.id)} · ${esc(d.name)}</option>`).join('')}</select></div><div id="gl"></div>
-  <div class="bar"><select id="gu">${users.map(u => `<option value="${esc(u.username)}">${esc(u.username)} (${u.role.toLowerCase()})</option>`).join('')}</select><select id="gp"><option>read</option><option>edit</option></select><label class="ck"><input type="checkbox" id="gc"> can rename</label><button id="gb" type="button">Grant</button></div>
-  <div class="bar"><input id="pcv" type="password" placeholder="Document passcode (8+ characters)" autocomplete="new-password"><button id="pcs" type="button">Set passcode</button><button class="g" id="pcc" type="button">Remove</button><b id="pst"></b></div>
+  m.innerHTML = '<h2>Who may open what</h2>' + (mine.length ? `<div class="bar"><select id="ad" aria-label="Choose a document">${mine.map(d => `<option value="${esc(d.id)}">${esc(d.id)} · ${esc(d.name)}</option>`).join('')}</select></div><div id="gl"></div>
+  <div class="bar"><select id="gu" aria-label="Viewer to give access to">${users.map(u => `<option value="${esc(u.username)}">${esc(u.username)} (${u.role.toLowerCase()})</option>`).join('')}</select><select id="gp" aria-label="Permission"><option>read</option><option>edit</option></select><label class="ck"><input type="checkbox" id="gc"> can rename</label><button id="gb" type="button">Grant</button></div>
+  <div class="bar"><input id="pcv" aria-label="New document passcode, 8 or more characters" type="password" placeholder="Document passcode (8+ characters)" autocomplete="new-password"><button id="pcs" type="button">Set passcode</button><button class="g" id="pcc" type="button">Remove</button><b id="pst"></b></div>
   <p class="mut">Owners you share with get read-only access. Revocation applies to the very next request. Others need the passcode before opening a protected file.</p>` : EMPTY('You own no documents yet.'));
   if (!mine.length) return;
   const id = () => $('#ad').value;
@@ -339,7 +381,7 @@ V.access = async m => {
     $('#pst').innerHTML = g.has_passcode ? '<span class="bdg v">🔑 PASSCODE SET</span>' : '<span class="bdg l">NO PASSCODE</span>';
     $('#gl').innerHTML = g.grants.length ? g.grants.map(x => {
       const ow = x.role === 'OWNER', u = esc(x.username);
-      return `<div class="row"><b>${u}</b>${ow ? '<span class="lv">read only (owner)</span>' : `<select data-p="${u}"><option ${x.level === 'read' ? 'selected' : ''}>read</option><option ${x.level === 'edit' ? 'selected' : ''}>edit</option></select><label class="ck"><input type="checkbox" data-r="${u}" ${x.can_rename ? 'checked' : ''}> can rename</label>`}<button class="g" type="button" data-u="${u}">Revoke</button>${x.role === 'VIEWER' ? `<button class="g" type="button" data-rp="${u}">Report</button>` : ''}</div>`;
+      return `<div class="row"><b>${u}</b>${ow ? '<span class="lv">read only (owner)</span>' : `<select data-p="${u}" aria-label="Permission for ${u}"><option ${x.level === 'read' ? 'selected' : ''}>read</option><option ${x.level === 'edit' ? 'selected' : ''}>edit</option></select><label class="ck"><input type="checkbox" data-r="${u}" ${x.can_rename ? 'checked' : ''}> can rename</label>`}<button class="g" type="button" data-u="${u}" aria-label="Revoke access for ${u}">Revoke</button>${x.role === 'VIEWER' ? `<button class="g" type="button" data-rp="${u}" aria-label="Report ${u}">Report</button>` : ''}</div>`;
     }).join('') : EMPTY('Private to you. No one else has access.');
   };
   $('#ad').addEventListener('change', rg);
@@ -391,7 +433,7 @@ V.policy = async m => {
   m.innerHTML = `<h2>Safety & Support</h2><div class="note pol"><h3>System policy settings</h3><p class="mut">Security-sensitive settings are fully under your control and your sole responsibility.</p><ul>
     <li>Allowed document types: ${p.allowed_types.map(esc).join(', ')}</li><li>Maximum upload size: ${p.max_upload_mib} MiB</li><li>Idle session lifetime: ${p.session_idle_minutes} minutes</li><li>Sign-in lockout: ${esc(p.lockout)}</li><li>Anonymous guest links: ${esc(p.guest_links)}</li><li>System configuration: ${esc(p.configuration)}</li></ul></div>
     <h3 class="sec">Incident / user report</h3><div class="rpf">${rpHtml(viewers, '')}<p><button id="rb" type="button">Send report</button></p></div>
-    <h3 class="sec">Messages from people you share with</h3>${inbox.length ? `<div class="tw"><table><thead><tr><th>Time (IST)</th><th>From</th><th>Doc</th><th>Message</th></tr></thead><tbody>${inbox.map(x => `<tr><td>${esc(ist(x.at))}</td><td>${esc(x.from)}</td><td>${esc(x.document)}</td><td>${esc(x.body)}</td></tr>`).join('')}</tbody></table></div>` : EMPTY('No messages yet.')}`;
+    <h3 class="sec">Messages from people you share with</h3>${inbox.length ? `<div class="tw"><table><thead><tr><th scope="col">Time (IST)</th><th scope="col">From</th><th scope="col">Doc</th><th scope="col">Message</th></tr></thead><tbody>${inbox.map(x => `<tr><td>${esc(ist(x.at))}</td><td>${esc(x.from)}</td><td>${esc(x.document)}</td><td>${esc(x.body)}</td></tr>`).join('')}</tbody></table></div>` : EMPTY('No messages yet.')}`;
   $('#rb').addEventListener('click', async () => { if (await rpSend(m, '', null)) V.policy(m); });
 };
 
@@ -400,8 +442,8 @@ V.people = async m => {
   const [users, reps] = await Promise.all([API.admin.users(), API.admin.reports()]);
   const bd = u => (u.verified ? '<b class="bdg v">VERIFIED</b>' : '<b class="bdg l">UNVERIFIED</b>') + (u.blocked ? '<b class="bdg b">BLOCKED</b>' : '') + (u.warnings ? `<b class="bdg w">WARNINGS ${u.warnings}</b>` : '') + (u.reset_pending ? '<b class="bdg l">RESET PENDING</b>' : '');
   m.innerHTML = `<h2>People and roles</h2><p class="mut">Email addresses come from sign-up email checks. Opening this page is logged.</p>${rolesHtml()}
-  <div class="tw"><table><thead><tr><th>User</th><th>Role</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>${users.map(u => { const n = esc(u.username); return `<tr><td>${n}</td><td><select data-u="${n}"><option value="OWNER" ${u.role === 'OWNER' ? 'selected' : ''}>owner</option><option value="VIEWER" ${u.role === 'VIEWER' ? 'selected' : ''}>viewer</option></select></td><td>${u.email ? esc(u.email) : '—'}</td><td>${bd(u)}</td><td><button class="g" type="button" data-x="reset" data-id="${n}">Reset credentials</button> <button class="g" type="button" data-x="${u.blocked ? 'unblock' : 'block'}" data-id="${n}">${u.blocked ? 'Unblock' : 'Block'}</button></td></tr>`; }).join('')}</tbody></table></div>
-  <h3 class="sec">Reports</h3><div class="tw"><table><thead><tr><th>Time (IST)</th><th>From</th><th>Category</th><th>About</th><th>Doc</th><th>Details</th></tr></thead><tbody>${reps.map(r => `<tr><td>${esc(ist(r.at))}</td><td>${esc(r.from)}</td><td>${esc(r.category)}</td><td>${esc(r.about)}</td><td>${esc(r.document || '—')}</td><td>${esc(r.details)}</td></tr>`).join('') || '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div>`;
+  <div class="tw"><table><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Email</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead><tbody>${users.map(u => { const n = esc(u.username); return `<tr><td>${n}</td><td><select data-u="${n}" aria-label="Role for ${n}"><option value="OWNER" ${u.role === 'OWNER' ? 'selected' : ''}>owner</option><option value="VIEWER" ${u.role === 'VIEWER' ? 'selected' : ''}>viewer</option></select></td><td>${u.email ? esc(u.email) : '—'}</td><td>${bd(u)}</td><td><button class="g" type="button" data-x="reset" data-id="${n}" aria-label="Reset credentials for ${n}">Reset credentials</button> <button class="g" type="button" data-x="${u.blocked ? 'unblock' : 'block'}" data-id="${n}" aria-label="${u.blocked ? 'Unblock' : 'Block'} ${n}">${u.blocked ? 'Unblock' : 'Block'}</button></td></tr>`; }).join('')}</tbody></table></div>
+  <h3 class="sec">Reports</h3><div class="tw"><table><thead><tr><th scope="col">Time (IST)</th><th scope="col">From</th><th scope="col">Category</th><th scope="col">About</th><th scope="col">Doc</th><th scope="col">Details</th></tr></thead><tbody>${reps.map(r => `<tr><td>${esc(ist(r.at))}</td><td>${esc(r.from)}</td><td>${esc(r.category)}</td><td>${esc(r.about)}</td><td>${esc(r.document || '—')}</td><td>${esc(r.details)}</td></tr>`).join('') || '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div>`;
   m.querySelectorAll('select[data-u]').forEach(s => s.addEventListener('change', async () => { if (await safe(API.admin.setRole(s.dataset.u, s.value))) toast('Role updated and logged.'); else V.people(m); }));
   m.querySelectorAll('button[data-x]').forEach(b => b.addEventListener('click', async () => {
     if (await safe(API.admin[b.dataset.x](b.dataset.id))) { toast('Done and logged.'); V.people(m); }
@@ -411,8 +453,8 @@ V.people = async m => {
 /* ---------------------------------------------------------------- audit */
 V.audit = async m => {
   const adm = me.role === 'ADMIN';
-  m.innerHTML = `<h2>${adm ? 'Activity and permission changes' : 'Your trail'}</h2><div class="bar"><button id="vf" type="button">Verify chain</button>${adm ? '<button class="g" id="tp" type="button">Try to tamper</button><button class="g" id="st" type="button">Run access self-tests</button><select id="fa"><option value="">All actors</option></select><select id="fx"><option value="">All actions</option></select>' : ''}<label class="ck"><input type="checkbox" id="od"> refused only</label><b id="vs"></b></div>${adm ? '<div class="note" id="wn"></div><div id="tr"></div>' : ''}
-  <div class="tw"><table><thead><tr><th>#</th><th>Time (IST)</th><th>Actor</th><th>Action</th><th>Doc</th><th>Result</th><th>Detail</th><th>Hash</th></tr></thead><tbody id="tb"></tbody></table></div>`;
+  m.innerHTML = `<h2>${adm ? 'Activity and permission changes' : 'Your trail'}</h2><div class="bar"><button id="vf" type="button">Verify chain</button>${adm ? '<button class="g" id="tp" type="button">Try to tamper</button><button class="g" id="st" type="button">Run access self-tests</button><select id="fa" aria-label="Filter by actor"><option value="">All actors</option></select><select id="fx" aria-label="Filter by action"><option value="">All actions</option></select>' : ''}<label class="ck"><input type="checkbox" id="od"> refused only</label><b id="vs"></b></div>${adm ? '<div class="note" id="wn"></div><div id="tr"></div>' : ''}
+  <div class="tw"><table><thead><tr><th scope="col">#</th><th scope="col">Time (IST)</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Doc</th><th scope="col">Result</th><th scope="col">Detail</th><th scope="col">Hash</th></tr></thead><tbody id="tb"></tbody></table></div>`;
   let facetsDone = false;
   const draw = async () => {
     const r = await safe(API.audit.list({ denied_only: $('#od').checked, actor: adm ? $('#fa').value : '', action: adm ? $('#fx').value : '' })); if (!r || cur !== 'audit') return;
@@ -446,7 +488,7 @@ const fab = $('#fab');
 function fabClose() { fab.classList.remove('exp'); $('#fb').setAttribute('aria-expanded', 'false'); }
 $('#fb').addEventListener('click', () => { const o = fab.classList.toggle('exp'); $('#fb').setAttribute('aria-expanded', String(o)); });
 fab.addEventListener('click', e => { const b = e.target.closest('.sub'); if (!b) return; fabClose(); if (b.dataset.f === 'file') $('#ff').click(); else txtPage(); });
-addEventListener('keydown', e => { if (e.key === 'Escape') fabClose(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') { const was = fab.classList.contains('exp'); fabClose(); if (was && fab.contains(document.activeElement)) $('#fb').focus(); } });
 document.addEventListener('pointerdown', e => { if (!fab.contains(e.target)) fabClose(); });
 $('#ff').addEventListener('change', e => { quick(e.target.files[0]); e.target.value = ''; });
 const catSel = id => `<label>Category<select id="${id}">${CATS.map(c => `<option>${c}</option>`).join('')}</select></label>`;
@@ -578,7 +620,7 @@ function txtPage() {
     reset();
     show(1, true);
     ov.classList.remove('fpw-out', 'fpw-in');
-    ov.hidden = false;
+    ov.hidden = false; $('login').setAttribute('inert', '');
     if (!calm) { void ov.offsetWidth; ov.classList.add('fpw-in'); }
     document.body.classList.add('fpw-lock');
   }
@@ -588,7 +630,7 @@ function txtPage() {
     document.body.classList.remove('fpw-lock');
     function fin() {
       st.closing = false;
-      ov.hidden = true;
+      ov.hidden = true; $('login').removeAttribute('inert');
       ov.classList.remove('fpw-in', 'fpw-out');
       reset();
       var back = (st.opener && document.contains(st.opener)) ? st.opener : link;
@@ -782,3 +824,9 @@ function txtPage() {
 
   renderRules();
 })();
+
+
+/* ---- accessibility: skip link and late-rendered content ---- */
+$('#sk').addEventListener('click', e => { e.preventDefault(); ($('#login').hidden ? $('#main') : $('#un')).focus(); });
+new MutationObserver(() => { clearTimeout(enhance.t); enhance.t = setTimeout(() => enhance($('#main')), 60); }).observe($('#main'), { childList: true, subtree: true });
+enhance();
