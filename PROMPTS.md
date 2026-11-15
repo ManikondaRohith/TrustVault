@@ -164,7 +164,6 @@ TrustVault is a website where owners share confidential documents and every touc
 # MISTAKES I FOUND (with pictures) AND THE PROMPTS I USED TO FIX THEM
 
 ## Mistake #1 – Color palette is broken in light mode
-![Light mode login](screenshots/06_Light_Mode_Login.png)
 
 **What is wrong:** The left panel stays dark navy, but the right side is white with a pale blue background. It looks like two different websites stuck together. The heading is also "Welcome back" here, but in dark mode it is "WELCOME BACK".
 
@@ -174,7 +173,6 @@ TrustVault is a website where owners share confidential documents and every touc
 ---
 
 ## Mistake #2 – Text is hard to read on the moving background
-![Login page dark](screenshots/01_Login_Page.png)
 
 **What is wrong:** The Vanta lines run across the text "Share confidential documents with confidence..." and the last line is hard to read.
 
@@ -184,7 +182,6 @@ TrustVault is a website where owners share confidential documents and every touc
 ---
 
 ## Mistake #3 – Forgot password box is white and still asks for a phone number
-![Forgot password old](screenshots/04_Forgot_Password_Old.png)
 
 **What is wrong (2 things):**
 1. The page is dark but the popup is bright white, so the colors don't match.
@@ -196,7 +193,6 @@ TrustVault is a website where owners share confidential documents and every touc
 ---
 
 ## Mistake #4 – Old SMS text still on the login page
-![Login page dark](screenshots/01_Login_Page.png)
 
 **What is wrong:** The small note under the button says *"Sign-in uses a one-time code sent to your registered email. By default new accounts are viewers who are verified by email and SMS codes."* But sign-in is now only username and password. The code is only for sign-up and forgot password. SMS is gone.
 
@@ -206,7 +202,6 @@ TrustVault is a website where owners share confidential documents and every touc
 ---
 
 ## Mistake #5 – OTP email goes to a fake address
-![Email OTP](screenshots/02_Email_OTP.png)
 
 **What is wrong:** The code mail came, but below it Gmail shows **"Address not found"**. The code was also sent to `manikonda_rohith@trustvault.local`, and that domain doesn't exist, so it bounced. The seed accounts had no real email.
 
@@ -216,7 +211,6 @@ TrustVault is a website where owners share confidential documents and every touc
 ---
 
 ## Mistake #6 – The + button covers the Viewer card
-![Owner view](screenshots/03_Owner_View.png)
 
 **What is wrong:** On the Overview page the round **+** button sits on top of the "Viewer" card at the bottom right, so I can't read the end of that card. Also the big box on the left has too much empty space around the small mascot.
 
@@ -226,7 +220,6 @@ TrustVault is a website where owners share confidential documents and every touc
 ---
 
 ## Mistake #7 – Date format and category filter on Documents page
-![Documents viewer](screenshots/05_Documents_Viewer.png)
 
 **What is wrong (2 things):**
 1. The card shows the date as `2026-11-08` but the filter box uses `dd-mm-yyyy`. Two formats on one page is confusing.
@@ -238,7 +231,6 @@ TrustVault is a website where owners share confidential documents and every touc
 ---
 
 ## Mistake #8 – Warning message wording is confusing
-![Warning](screenshots/07_Warning.png)
 
 **What is wrong:** The sentence says *"...is immediately reported to the owner or any inappropriate activities."* That doesn't make sense. Some other texts in my app also have spelling mistakes: "**Atleast** 12 characters", "**inproper** behaviour", "a fourth warning **will blocks** your account".
 
