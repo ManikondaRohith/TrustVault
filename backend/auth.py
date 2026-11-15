@@ -85,14 +85,16 @@ def can(user: User | None, doc: Document | None, perm: str, grant: DocumentGrant
     * 'own' (share, revoke, passcode, delete): owner only
     * others need a live grant; OWNER-role grantees are always read-only;
       'edit' needs an EDIT grant, 'rename' needs its own flag
-    * ADMIN users may read vault content for oversight, but cannot edit, share, or delete it
+    * ADMIN users can inspect metadata only and never read document content
     """
     if user is None or doc is None or user.is_blocked or doc.is_deleted or doc.owner.is_blocked:
         return False
+    # Administrators are deliberately excluded from every content permission,
+    # even if an ADMIN account happens to own a document or has a stale grant.
+    if user.role == "ADMIN":
+        return False
     if doc.owner_id == user.id:
         return True
-    if user.role == "ADMIN":
-        return perm == "read"
     if perm == "own" or grant is None:
         return False
     if perm == "read":
