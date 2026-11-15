@@ -19,12 +19,15 @@ from security import (MIME, clean_filename, extension, hash_passcode, limiter, l
 router = APIRouter(prefix="/api", tags=["documents"])
 
 
-def _card(db: Session, c: Caller, d: Document) -> dict:
+_UNSET_GRANT = object()
+
+
+def _card(db: Session, c: Caller, d: Document, grant=_UNSET_GRANT) -> dict:
     # Admin document views are deliberately metadata-minimal. Do not load grants
     # or expose owner, size, category, passcode state, or any content-derived data.
     if c.user.role == "ADMIN":
         return {"id": d.ref, "name": d.name, "sha256": d.sha256}
-    g = grant_for(db, d, c.user)
+    g = grant_for(db, d, c.user) if grant is _UNSET_GRANT else grant
     is_owner = d.owner_id == c.user.id
     return {
         "id": d.ref, "name": d.name, "owner": d.owner.username, "category": d.category,
@@ -93,7 +96,16 @@ def list_documents(q: str = "", owner: str = "", category: str = "", from_date: 
     if from_date:
         stmt = stmt.where(Document.created_at >= from_date)
     docs = db.execute(stmt.order_by(Document.id)).unique().scalars().all()
-    return {"documents": [_card(db, c, d) for d in docs], "categories": list(CATEGORIES)}
+    # Fetch this caller's grants in one query instead of one query per document.
+    grants_by_doc = {}
+    if docs and c.user.role != "ADMIN":
+        rows = db.execute(select(DocumentGrant).where(
+            DocumentGrant.user_id == c.user.id,
+            DocumentGrant.document_id.in_([d.id for d in docs]),
+        )).scalars()
+        grants_by_doc = {g.document_id: g for g in rows}
+    return {"documents": [_card(db, c, d, grants_by_doc.get(d.id)) for d in docs],
+            "categories": list(CATEGORIES)}
 
 
 @router.get("/documents/owners")
