@@ -20,6 +20,10 @@ router = APIRouter(prefix="/api", tags=["documents"])
 
 
 def _card(db: Session, c: Caller, d: Document) -> dict:
+    # Admin document views are deliberately metadata-minimal. Do not load grants
+    # or expose owner, size, category, passcode state, or any content-derived data.
+    if c.user.role == "ADMIN":
+        return {"id": d.ref, "name": d.name, "sha256": d.sha256}
     g = grant_for(db, d, c.user)
     is_owner = d.owner_id == c.user.id
     return {
@@ -161,7 +165,8 @@ def metadata(ref: str, c: Caller = Depends(current_user), db: Session = Depends(
         raise HTTPException(403, "Refused. This attempt has been recorded.")
     c.audit("metadata", "allowed", doc=d)
     card = _card(db, c, d)
-    card["grants"] = len(d.grants)
+    if c.user.role != "ADMIN":
+        card["grants"] = len(d.grants)
     return card
 
 
